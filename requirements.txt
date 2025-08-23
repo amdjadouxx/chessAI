@@ -1,0 +1,23 @@
+# Requirements pour Chess AI
+# =========================
+
+# Dépendance principale
+python-chess>=1.999
+
+# Interface graphique
+pygame>=2.1.0
+
+# Dépendances de développement optionnelles
+pytest>=7.0
+pytest-cov>=4.0
+black>=22.0
+flake8>=5.0
+mypy>=1.0
+
+# Documentation
+sphinx>=5.0
+sphinx-rtd-theme>=1.0
+
+# Outils de qualité
+pre-commit>=2.20
+bandit>=1.7
