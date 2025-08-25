@@ -16,6 +16,7 @@ try:
         use_3d = "--3d" in sys.argv
         if use_3d:
             from chess_ai.gui.chess_gui_3d import main as main3d
+
             print("🚀 Lancement de Chess AI - Interface 3D Simple")
             print("=" * 50)
             print("Contrôles :")
@@ -27,6 +28,7 @@ try:
             sys.exit(main3d())
         else:
             from chess_ai.gui.chess_gui import main as main2d
+
             print("🚀 Lancement de Chess AI - Interface Graphique Classique")
             print("=" * 50)
             print("Contrôles :")
