@@ -13,10 +13,7 @@ from dataclasses import dataclass
 import chess
 
 from ..core.environment import ChessEnvironment
-from ..core.analyzer import ChessAnalyzer
 from ..exceptions import ChessError
-from .board_renderer import BoardRenderer
-from .piece_renderer import PieceRenderer
 
 
 @dataclass

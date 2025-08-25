@@ -18,8 +18,6 @@ from ..exceptions import (
     InvalidFENError,
     ChessBoardStateError,
 )
-from ..utils.validation import validate_square, validate_move
-from ..utils.logging_config import get_logger
 
 
 class ChessEnvironment:
@@ -53,7 +51,7 @@ class ChessEnvironment:
             InvalidFENError: Si la notation FEN fournie est invalide
             ChessBoardStateError: Si l'initialisation échoue
         """
-        self.logger = get_logger(__name__) if enable_logging else None
+        self.logger = logging.getLogger(__name__) if enable_logging else None
         self._move_history: List[Move] = []
 
         try:
@@ -109,7 +107,19 @@ class ChessEnvironment:
             InvalidSquareError: Si la notation de case est invalide
         """
         try:
-            validated_square = validate_square(square)
+            # Valider la case
+            if not isinstance(square, (int, str)):
+                raise InvalidSquareError(f"Case invalide: {square}")
+
+            if isinstance(square, str):
+                try:
+                    validated_square = chess.parse_square(square)
+                except ValueError:
+                    raise InvalidSquareError(f"Nom de case invalide: {square}")
+            else:
+                if not (0 <= square <= 63):
+                    raise InvalidSquareError(f"Numéro de case invalide: {square}")
+                validated_square = square
             piece = self.board.piece_at(validated_square)
 
             if self.logger and piece:
@@ -145,7 +155,16 @@ class ChessEnvironment:
             raise GameOverError("effectuer un mouvement", result or "Inconnu")
 
         try:
-            validated_move = validate_move(move, self.board)
+            # Valider et convertir le mouvement
+            if isinstance(move, str):
+                try:
+                    validated_move = chess.Move.from_uci(move)
+                except ValueError:
+                    raise InvalidMoveError(f"Format de mouvement invalide: {move}")
+            elif isinstance(move, chess.Move):
+                validated_move = move
+            else:
+                raise InvalidMoveError(f"Type de mouvement invalide: {type(move)}")
 
             if validated_move not in self.board.legal_moves:
                 move_str = str(validated_move)

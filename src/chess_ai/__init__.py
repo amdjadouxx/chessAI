@@ -15,25 +15,21 @@ __author__ = "Chess AI Team"
 __email__ = "contact@chessai.dev"
 
 from .core.environment import ChessEnvironment
-from .core.analyzer import ChessAnalyzer
-from .core.display import ChessDisplay
 from .exceptions import *
 
 # Import conditionnel de l'interface graphique
 try:
-    from .gui.chess_gui import ChessGUI
+    from .gui.chess_gui_3d import SimpleChessGUI3D
 
     GUI_AVAILABLE = True
 except ImportError:
     # Pygame non disponible
-    ChessGUI = None
+    SimpleChessGUI3D = None
     GUI_AVAILABLE = False
 
 __all__ = [
     "ChessEnvironment",
-    "ChessAnalyzer",
-    "ChessDisplay",
-    "ChessGUI",
+    "SimpleChessGUI3D",
     "GUI_AVAILABLE",
     "ChessError",
     "InvalidMoveError",
@@ -58,5 +54,5 @@ def launch_gui(environment=None):
             "Installez-le avec: pip install pygame"
         )
 
-    gui = ChessGUI(environment)
+    gui = SimpleChessGUI3D()
     gui.run()
