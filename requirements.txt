@@ -7,6 +7,9 @@ python-chess>=1.999
 # Interface graphique
 pygame>=2.1.0
 
+# Rendu 3D simple
+numpy>=1.20.0
+
 # Dépendances de développement optionnelles
 pytest>=7.0
 pytest-cov>=4.0
