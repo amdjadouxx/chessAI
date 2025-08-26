@@ -257,6 +257,36 @@ class ChessNet(nn.Module):
         return policy_logits, value
 
 
+def move_to_index(move: chess.Move) -> int:
+    """
+    Convertit un coup d'échecs en index pour le réseau neuronal.
+
+    Mapping simplifié basé sur les squares de départ et d'arrivée.
+
+    Args:
+        move: Coup d'échecs
+
+    Returns:
+        Index entre 0 et 4671
+    """
+    from_square = move.from_square
+    to_square = move.to_square
+
+    # Mapping basique : 64*64 = 4096 combinaisons possibles
+    # + promotions et autres mouvements spéciaux
+    base_index = from_square * 64 + to_square
+
+    # Gérer les promotions
+    if move.promotion:
+        # Ajouter offset pour les promotions (4 types × 64 positions = 256)
+        promotion_offset = 4096
+        promotion_type = move.promotion - 1  # 0-3 pour Queen, Rook, Bishop, Knight
+        base_index = promotion_offset + to_square * 4 + promotion_type
+
+    # S'assurer que l'index est dans les limites
+    return min(base_index, 4671)  # 4672 - 1
+
+
 def decode_policy(
     policy_logits: torch.Tensor, legal_moves: List[chess.Move], temperature: float = 1.0
 ) -> Dict[chess.Move, float]:
@@ -271,23 +301,37 @@ def decode_policy(
     Returns:
         Dictionnaire {move: probability} pour les coups légaux uniquement
     """
-    # Extraire les logits pour les coups légaux
-    legal_indices = [move_to_index(move) for move in legal_moves]
-    legal_logits = policy_logits[legal_indices]
+    if not legal_moves:
+        return {}
 
-    # Appliquer la température
-    if temperature != 1.0:
-        legal_logits = legal_logits / temperature
+    try:
+        # Extraire les logits pour les coups légaux
+        legal_indices = [move_to_index(move) for move in legal_moves]
 
-    # Softmax pour obtenir les probabilités
-    legal_probs = F.softmax(legal_logits, dim=0)
+        # Vérifier que tous les indices sont valides
+        max_index = policy_logits.size(0) - 1
+        legal_indices = [min(idx, max_index) for idx in legal_indices]
 
-    # Créer le dictionnaire move -> probabilité
-    move_probs = {}
-    for move, prob in zip(legal_moves, legal_probs):
-        move_probs[move] = prob.item()
+        legal_logits = policy_logits[legal_indices]
 
-    return move_probs
+        # Appliquer la température
+        if temperature != 1.0:
+            legal_logits = legal_logits / temperature
+
+        # Softmax pour obtenir les probabilités
+        legal_probs = F.softmax(legal_logits, dim=0)
+
+        # Créer le dictionnaire move -> probabilité
+        move_probs = {}
+        for move, prob in zip(legal_moves, legal_probs):
+            move_probs[move] = prob.item()
+
+        return move_probs
+
+    except Exception as e:
+        # Fallback : probabilités uniformes
+        uniform_prob = 1.0 / len(legal_moves)
+        return {move: uniform_prob for move in legal_moves}
 
 
 def batch_encode_boards(boards: List[chess.Board]) -> torch.FloatTensor:

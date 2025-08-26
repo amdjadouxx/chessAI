@@ -1,0 +1,29 @@
+🔧 INSTALLATION DE STOCKFISH
+============================
+
+Pour avoir une évaluation de référence fiable, installez Stockfish :
+
+📥 TÉLÉCHARGEMENT DIRECT :
+1. Aller sur : https://stockfishchess.org/download/
+2. Télécharger : "stockfish-windows-x86-64-avx2.zip"
+3. Extraire le fichier "stockfish.exe"
+
+📁 INSTALLATION LOCALE (Recommandée) :
+1. Créer un dossier "stockfish" dans le projet
+2. Placer "stockfish.exe" dans ce dossier
+   Résultat : chessAI/stockfish/stockfish.exe
+
+📁 INSTALLATION SYSTÈME :
+1. Créer le dossier C:\stockfish\
+2. Placer "stockfish.exe" dans ce dossier
+   Résultat : C:\stockfish\stockfish.exe
+
+🚀 ALTERNATIVE AUTOMATIQUE :
+   Exécuter : python download_stockfish.py
+
+⚠️  SANS STOCKFISH :
+   Le programme utilise une évaluation basique mais fonctionnelle.
+   Les deux barres d'évaluation marchent quand même !
+
+🎮 APRÈS INSTALLATION :
+   Redémarrer Chess AI pour détecter Stockfish automatiquement.

@@ -4,6 +4,9 @@
 # Dépendance principale
 python-chess>=1.999
 
+# Moteur d'échecs de référence
+stockfish>=3.28.0
+
 # Interface graphique
 pygame>=2.1.0
 
@@ -13,6 +16,9 @@ numpy>=1.20.0
 # IA et apprentissage automatique
 torch>=2.0.0
 torchvision>=0.15.0
+
+# Interface utilisateur et barres de progression
+tqdm>=4.64.0
 
 # Dépendances de développement optionnelles
 pytest>=7.0

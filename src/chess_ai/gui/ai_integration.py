@@ -3,6 +3,7 @@ Intégration AlphaZero avec l'interface de jeu
 ===========================================
 
 Ce module permet d'utiliser l'IA AlphaZero dans l'interface graphique.
+Supporte les modes réseau simple et MCTS avancé.
 """
 
 import chess
@@ -10,29 +11,51 @@ import torch
 import torch.nn.functional as F
 from typing import Tuple, Optional
 from ..ai.network import ChessNet, encode_board, decode_policy
+from ..ai.mcts import MCTS
 
 
 class AlphaZeroPlayer:
     """
     Joueur IA utilisant le réseau AlphaZero.
+    Supporte les modes réseau simple et MCTS avancé.
     """
 
-    def __init__(self, model_path: Optional[str] = None, device: str = "cpu"):
+    def __init__(
+        self,
+        model_path: Optional[str] = None,
+        device: str = "cpu",
+        use_mcts: bool = False,
+        mcts_simulations: int = 400,
+        c_puct: float = 1.4,
+    ):
         """
         Initialise le joueur IA.
 
         Args:
             model_path: Chemin vers un modèle pré-entraîné (optionnel)
             device: Device pour l'inférence ("cpu" ou "cuda")
+            use_mcts: Utiliser MCTS (True) ou évaluation directe (False)
+            mcts_simulations: Nombre de simulations MCTS si activé
+            c_puct: Constante d'exploration PUCT pour MCTS
         """
         self.device = torch.device(device)
         self.net = ChessNet()
+        self.use_mcts = use_mcts
+        self.mcts_simulations = mcts_simulations
 
         if model_path:
             self.load_model(model_path)
 
         self.net.to(self.device)
         self.net.eval()
+
+        # Initialiser MCTS si demandé
+        if use_mcts:
+            self.mcts = MCTS(self.net, c_puct=c_puct, device=str(self.device))
+            print(f"🤖 IA MCTS initialisée ({mcts_simulations} simulations)")
+        else:
+            self.mcts = None
+            print("🤖 IA en mode évaluation directe")
 
     def load_model(self, model_path: str):
         """Charge un modèle pré-entraîné."""
@@ -86,32 +109,40 @@ class AlphaZeroPlayer:
         Returns:
             Meilleur coup selon l'IA
         """
-        value, move_probs = self.evaluate_position(board)
-
-        if not move_probs:
-            # Aucun coup légal (situation anormale)
-            return None
-
-        if temperature == 0:
-            # Sélection déterministe
-            best_move = max(move_probs.items(), key=lambda x: x[1])[0]
+        if self.use_mcts and self.mcts:
+            # Mode MCTS avancé
+            move_distribution = self.mcts.run(board, self.mcts_simulations)
+            if not move_distribution:
+                return None
+            return self.mcts.select_move(move_distribution, temperature)
         else:
-            # Sélection probabiliste
-            moves = list(move_probs.keys())
-            probs = list(move_probs.values())
+            # Mode évaluation directe
+            value, move_probs = self.evaluate_position(board)
 
-            # Appliquer la température
-            probs = torch.tensor(probs)
-            if temperature != 1.0:
-                probs = probs / temperature
+            if not move_probs:
+                # Aucun coup légal (situation anormale)
+                return None
 
-            probs = F.softmax(probs, dim=0)
+            if temperature == 0:
+                # Sélection déterministe
+                best_move = max(move_probs.items(), key=lambda x: x[1])[0]
+            else:
+                # Sélection probabiliste
+                moves = list(move_probs.keys())
+                probs = list(move_probs.values())
 
-            # Échantillonner
-            idx = torch.multinomial(probs, 1).item()
-            best_move = moves[idx]
+                # Appliquer la température
+                probs = torch.tensor(probs)
+                if temperature != 1.0:
+                    probs = probs / temperature
 
-        return best_move
+                probs = F.softmax(probs, dim=0)
+
+                # Échantillonner
+                idx = torch.multinomial(probs, 1).item()
+                best_move = moves[idx]
+
+            return best_move
 
     def get_move_analysis(self, board: chess.Board, top_k: int = 5) -> dict:
         """
@@ -124,17 +155,42 @@ class AlphaZeroPlayer:
         Returns:
             Dictionnaire avec l'analyse
         """
-        value, move_probs = self.evaluate_position(board)
+        if self.use_mcts and self.mcts:
+            # Analyse MCTS
+            move_distribution = self.mcts.run(board, self.mcts_simulations)
+            value, _ = self.evaluate_position(board)  # Valeur du réseau
 
-        # Trier les coups par probabilité
-        sorted_moves = sorted(move_probs.items(), key=lambda x: x[1], reverse=True)
+            # Statistiques MCTS
+            mcts_stats = self.mcts.get_action_stats()
 
-        analysis = {
-            "evaluation": value,
-            "turn": "Blancs" if board.turn else "Noirs",
-            "top_moves": sorted_moves[:top_k],
-            "total_legal_moves": len(move_probs),
-        }
+            # Trier par distribution MCTS
+            sorted_moves = sorted(
+                move_distribution.items(), key=lambda x: x[1], reverse=True
+            )
+
+            analysis = {
+                "evaluation": value,
+                "turn": "Blancs" if board.turn else "Noirs",
+                "top_moves": sorted_moves[:top_k],
+                "total_legal_moves": len(move_distribution),
+                "mcts_enabled": True,
+                "mcts_simulations": self.mcts_simulations,
+                "mcts_visits": mcts_stats.get("total_visits", 0),
+            }
+        else:
+            # Analyse réseau direct
+            value, move_probs = self.evaluate_position(board)
+
+            # Trier les coups par probabilité
+            sorted_moves = sorted(move_probs.items(), key=lambda x: x[1], reverse=True)
+
+            analysis = {
+                "evaluation": value,
+                "turn": "Blancs" if board.turn else "Noirs",
+                "top_moves": sorted_moves[:top_k],
+                "total_legal_moves": len(move_probs),
+                "mcts_enabled": False,
+            }
 
         return analysis
 
@@ -145,6 +201,62 @@ class AlphaZeroPlayer:
     def get_move(self, board: chess.Board):
         """Alias pour select_move pour compatibilité."""
         return self.select_move(board)
+
+    def enable_mcts(self, simulations: int = 400, c_puct: float = 1.4):
+        """Active le mode MCTS."""
+        self.use_mcts = True
+        self.mcts_simulations = simulations
+        if not self.mcts:
+            self.mcts = MCTS(self.net, c_puct=c_puct, device=str(self.device))
+        print(f"🤖 MCTS activé ({simulations} simulations)")
+
+    def disable_mcts(self):
+        """Désactive le mode MCTS."""
+        self.use_mcts = False
+        print("🤖 MCTS désactivé - mode évaluation directe")
+
+    def reset_mcts(self):
+        """Réinitialise l'arbre MCTS."""
+        if self.mcts:
+            self.mcts.reset()
+
+
+class MCTSAlphaZeroPlayer(AlphaZeroPlayer):
+    """
+    Version spécialisée avec MCTS toujours activé.
+    """
+
+    def __init__(
+        self,
+        model_path: Optional[str] = None,
+        device: str = "cpu",
+        mcts_simulations: int = 800,
+        c_puct: float = 1.4,
+        temperature: float = 1.0,
+    ):
+        """
+        Initialise un joueur MCTS AlphaZero.
+
+        Args:
+            model_path: Chemin vers le modèle
+            device: Device de calcul
+            mcts_simulations: Nombre de simulations par coup
+            c_puct: Constante d'exploration
+            temperature: Température par défaut
+        """
+        super().__init__(
+            model_path,
+            device,
+            use_mcts=True,
+            mcts_simulations=mcts_simulations,
+            c_puct=c_puct,
+        )
+        self.default_temperature = temperature
+
+    def get_move(self, board: chess.Board, temperature: Optional[float] = None):
+        """Sélectionne un coup avec la température par défaut."""
+        temp = temperature if temperature is not None else self.default_temperature
+        return self.select_move(board, temp)
 
 
 def add_ai_to_gui(gui_class):
@@ -221,30 +333,46 @@ def add_ai_to_gui(gui_class):
 
 # Exemple d'utilisation simple
 def demo_ai_vs_random():
-    """Démonstration : IA vs coups aléatoires."""
+    """Démonstration : AlphaZero vs Random avec et sans MCTS."""
     import random
 
     print("🤖 Démonstration : AlphaZero vs Random")
     print("=" * 40)
 
+    # Test mode direct
+    print("\n1. Mode évaluation directe:")
     board = chess.Board()
-    ai = AlphaZeroPlayer()
+    ai_direct = AlphaZeroPlayer(use_mcts=False)
 
+    analysis = ai_direct.get_move_analysis(board, top_k=3)
+    print(f"   Évaluation : {analysis['evaluation']:+.3f}")
+    print("   Top 3 coups :")
+    for i, (move, prob) in enumerate(analysis["top_moves"], 1):
+        print(f"      {i}. {move} ({prob:.3f})")
+
+    # Test mode MCTS
+    print("\n2. Mode MCTS (100 simulations):")
+    ai_mcts = AlphaZeroPlayer(use_mcts=True, mcts_simulations=100)
+
+    analysis_mcts = ai_mcts.get_move_analysis(board, top_k=3)
+    print(f"   Évaluation : {analysis_mcts['evaluation']:+.3f}")
+    print(f"   Visites MCTS : {analysis_mcts.get('mcts_visits', 0)}")
+    print("   Top 3 coups :")
+    for i, (move, prob) in enumerate(analysis_mcts["top_moves"], 1):
+        print(f"      {i}. {move} ({prob:.3f})")
+
+    # Partie courte
+    print("\n3. Partie courte (MCTS vs Random):")
+    board = chess.Board()
     move_count = 0
 
-    while not board.is_game_over() and move_count < 20:
+    while not board.is_game_over() and move_count < 10:
         print(f"\nCoup {move_count + 1} ({'Blancs' if board.turn else 'Noirs'}):")
 
         if board.turn == chess.WHITE:
-            # IA joue les blancs
-            analysis = ai.get_move_analysis(board, top_k=3)
-            print(f"   Évaluation IA : {analysis['evaluation']:+.3f}")
-            print("   Top 3 coups :")
-            for i, (move, prob) in enumerate(analysis["top_moves"], 1):
-                print(f"      {i}. {move} ({prob:.3f})")
-
-            move = ai.select_move(board)
-            print(f"   IA joue : {move}")
+            # IA MCTS joue les blancs
+            move = ai_mcts.select_move(board, temperature=0.5)
+            print(f"   IA MCTS joue : {move}")
         else:
             # Coups aléatoires pour les noirs
             legal_moves = list(board.legal_moves)

@@ -1,34 +1,25 @@
-# Chess AI - Interface 3D avec Intelligence Artificielle 🎮🤖
+# Chess AI - Interface 3D avec Intelligence Artificielle et MCTS 🎮🤖
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.8+-red.svg)](https://pytorch.org/)
-[![GUI: Pygame](https://img## 📚 Documentation
-
-- 📖 **[GUIDE_3D_IA.md](GUIDE_3D_IA.md)** : Guide complet avec tous les détails
-- 🎮 **[docs/GUI_GUIDE.md](docs/GUI_GUIDE.md)** : Guide de l'interface (si disponible)
-- 🤖 **Code source commenté** : Toutes les fonctions sont documentées dans le code
-
-### Fichiers Principaux à Connaître
-- **`launch_gui.py`** : Point d'entrée principal
-- **`src/chess_ai/gui/chess_gui_3d.py`** : Interface 3D complète
-- **`src/chess_ai/ai/network.py`** : Réseau de neurones AlphaZero
-- **`src/chess_ai/gui/ai_integration.py`** : Intégration IA dans l'interface
-- **`requirements.txt`** : Liste des dépendances à installerlds.io/badge/GUI-Pygame-green.svg)](https://www.pygame.org/)
-[![AI: AlphaZero](https://img.shields.io/badge/AI-AlphaZero-purple.svg)](https://arxiv.org/)
+[![GUI: Pygame](https://img.shields.io/badge/GUI-Pygame-green.svg)](https://www.pygame.org/)
+[![AI: AlphaZero+MCTS](https://img.shields.io/badge/AI-AlphaZero+MCTS-purple.svg)](https://arxiv.org/)
 
 ## 🎯 Vue d'ensemble
 
-Chess AI est une **interface d'échecs 3D moderne** avec **intelligence artificielle AlphaZero intégrée**. Cette implémentation combine une expérience visuelle immersive avec des capacités d'analyse IA avancées.
+Chess AI est une **interface d'échecs 3D moderne** avec **intelligence artificielle AlphaZero + MCTS**. Cette implémentation combine une expérience visuelle immersive avec des capacités d'analyse IA de niveau professionnel utilisant l'algorithme Monte Carlo Tree Search.
 
 ### ✨ Caractéristiques principales
 
 - 🎮 **Interface 3D pseudo-perspective** avec effets de profondeur
-- 🤖 **IA AlphaZero** avec réseau de neurones CNN dual-head
-- 🎯 **Suggestions IA visuelles** avec surlignage coloré des coups
-- 🖱️ **Contrôles interactifs** : rotation caméra, zoom, clic-déplacer
+- 🤖 **IA AlphaZero avec MCTS** - Recherche arborescente avancée
+- 🧠 **Mode MCTS complet** : 4 étapes (Sélection, Expansion, Évaluation, Backpropagation)
+- 🎯 **Analyse en profondeur** avec simulations configurables (100-3200)
+- � **Double barre d'évaluation** : Référence (Stockfish) vs IA en apprentissage
+- �🖱️ **Contrôles interactifs** : rotation caméra, zoom, clic-déplacer
 - 📍 **Coordonnées visibles** (A-H, 1-8) pour orientation
-- ⚡ **Calcul temps réel** des probabilités de coups
+- ⚡ **Double mode IA** : Évaluation directe OU recherche MCTS
 - 🎨 **Interface moderne** avec animations fluides
 - 🔄 **Roque automatique** et gestion complète des règles
 
@@ -162,72 +153,178 @@ chessAI/
 | **R** | Réinitialiser caméra |
 | **H** | Toggle suggestions IA |
 | **I** | Jouer coup IA automatiquement |
+| **E** | Toggle barres d'évaluation |
 
 ### Interface Visuelle
 - 🎨 **Plateau 3D** avec perspective dynamique
 - 📍 **Coordonnées A-H, 1-8** toujours visibles
 - 🎯 **Surlignage intelligent** : sélection (jaune), mouvements possibles (vert), suggestions IA (bleu)
 - 💡 **Intensité variable** des suggestions basée sur les probabilités IA
+- 📊 **Double barre d'évaluation** : Référence vs IA en temps réel
+- 📈 **Historique graphique** des évaluations avec mini-graphiques
 - 📊 **Affichage temps réel** des statistiques de jeu
 
-## 🤖 Intelligence Artificielle
+## 🤖 Intelligence Artificielle avec MCTS
 
-### Architecture AlphaZero
+### Architecture AlphaZero + MCTS
 - **Réseau de neurones** : CNN dual-head (politique + évaluation)
+- **Algorithme MCTS** : 4 étapes complètes (Sélection, Expansion, Évaluation, Backpropagation)
+- **Formule PUCT** : Q + c_puct * P * sqrt(N_parent)/(1+N_child)
 - **Encodage plateau** : 16×8×8 (pièces, règles spéciales, tour)
 - **Espace d'action** : 4672 mouvements possibles
-- **Entraînement** : Poids aléatoires (modèle démo)
+- **Modes disponibles** : Évaluation directe OU recherche MCTS avancée
 
-### Fonctionnalités IA
+## � **NOUVELLES FONCTIONNALITÉS AVANCÉES**
+
+### 🔥 **Pré-entraînement supervisé avec Stockfish**
+Accélérez drastiquement l'apprentissage de votre IA !
+
+```bash
+# 1. Pré-entraînement supervisé (base solide)
+python pretrain_with_stockfish.py
+
+# 2. Entraînement AlphaZero amélioré
+python full_training_demo.py
+```
+
+**Avantages :**
+- ✅ **Base solide** : L'IA commence avec des connaissances Stockfish
+- ✅ **Convergence rapide** : Apprentissage 10x plus efficace
+- ✅ **Validation objective** : Comparaison continue avec Stockfish
+- ✅ **Apprentissage hybride** : Stockfish + découvertes AlphaZero
+
+### �📊 **Système d'évaluation double en temps réel**
+
+### Barres d'Évaluation en Temps Réel
+L'interface affiche **deux barres d'évaluation côte à côte** :
+
+#### 🔵 Barre de Référence (Stockfish)
+- **Évaluateur fiable** basé sur Stockfish (ou évaluation basique en fallback)
+- **Couleur bleue** pour la distinguer
+- **Évaluation objective** indépendante de l'apprentissage
+- **Historique graphique** des 20 dernières positions
+
+#### 🟠 Barre IA AlphaZero
+- **Évaluation de l'IA** en cours d'apprentissage
+- **Couleur orange** pour la différencier
+- **Évolution visible** au fur et à mesure de l'entraînement
+- **Comparaison directe** avec la référence
+
+#### 📈 Fonctionnalités Visuelles
+- **Échelle normalisée** : -1.0 (noir gagne) à +1.0 (blanc gagne)
+- **Ligne de milieu** jaune pour l'égalité (0.0)
+- **Valeurs numériques** affichées au-dessus de chaque barre
+- **Calcul d'écart** entre référence et IA
+- **Mini-graphiques** d'historique pour chaque évaluation
+
+### Installation Stockfish (Optionnelle)
+Pour une évaluation de référence optimale, voir : [Installation Stockfish](docs/STOCKFISH_INSTALL.md)
+
+Sans Stockfish, le système utilise une évaluation basique mais fonctionnelle.
+
+### Fonctionnalités IA Avancées
+
+#### Mode MCTS (Recommandé)
 ```python
-# Exemple d'utilisation IA
 from chess_ai.gui.ai_integration import AlphaZeroPlayer
-import chess
 
-# Initialiser l'IA
-ai = AlphaZeroPlayer()
+# IA MCTS avec 800 simulations
+ai = AlphaZeroPlayer(
+    use_mcts=True,
+    mcts_simulations=800,
+    c_puct=1.4
+)
 
-# Analyser une position
-board = chess.Board()
-analysis = ai.analyze_position(board)
+# Analyse avec statistiques MCTS
+analysis = ai.get_move_analysis(board)
+print(f"Évaluation : {analysis['evaluation']:+.3f}")
+print(f"Simulations MCTS : {analysis['mcts_simulations']}")
+print(f"Visites totales : {analysis['mcts_visits']}")
+```
 
-print(f"Top 3 coups:")
+#### Mode Évaluation Directe (Rapide)
+```python
+# IA rapide sans MCTS
+ai = AlphaZeroPlayer(use_mcts=False)
+
+# Analyse instantanée
+analysis = ai.get_move_analysis(board)
 for i, (move, prob) in enumerate(analysis['top_moves'][:3], 1):
     print(f"{i}. {move} ({prob:.1%})")
 ```
 
-### Suggestions Visuelles
-- **Appuyez sur H** : Active/désactive les suggestions
-- **Couleurs d'intensité** : Plus la suggestion est forte, plus le bleu est intense
-- **Top 3 coups** affichés simultanément sur le plateau
-- **Probabilités en %** affichées dans l'interface
+### Configurations MCTS Recommandées
+
+| Niveau | Simulations | c_puct | Temps approx | Usage |
+|--------|-------------|--------|--------------|-------|
+| **Rapide** | 100-200 | 1.0 | 0.5-1s | Test/Debug |
+| **Standard** | 400-800 | 1.4 | 2-4s | Jeu normal |
+| **Expert** | 1200-1600 | 1.6 | 6-8s | Analyse approfondie |
+| **Tournoi** | 2400-3200 | 1.8 | 12-15s | Compétition |
+
+### Interface MCTS Spécialisée
+```python
+from chess_ai.gui.ai_integration import MCTSAlphaZeroPlayer
+
+# Joueur MCTS optimisé avec paramètres prédéfinis
+player = MCTSAlphaZeroPlayer(
+    mcts_simulations=1200,  # Niveau expert
+    c_puct=1.6,
+    temperature=0.1
+)
+
+move = player.get_move(board)  # Utilise automatiquement MCTS
+```
 
 ## 🏗️ Architecture du Projet
 
 ```
 chessAI/
-├── launch_gui.py               # Lanceur principal
+├── launch_gui.py                    # Lanceur principal
 ├── src/chess_ai/
-│   ├── __init__.py            # Module principal
-│   ├── ai/                    # Intelligence Artificielle
+│   ├── __init__.py                 # Module principal
+│   ├── ai/                         # Intelligence Artificielle
 │   │   ├── __init__.py
-│   │   └── network.py         # Réseau AlphaZero (CNN)
+│   │   ├── network.py              # Réseau AlphaZero (CNN)
+│   │   └── mcts.py                 # 🆕 Algorithme MCTS complet
 │   ├── core/
 │   │   ├── __init__.py
-│   │   └── environment.py     # Logique de jeu (python-chess)
+│   │   └── environment.py          # Logique de jeu (python-chess)
 │   ├── gui/
 │   │   ├── __init__.py
-│   │   ├── chess_gui_3d.py    # Interface 3D principale
-│   │   └── ai_integration.py  # Intégration IA/GUI
+│   │   ├── chess_gui_3d.py         # Interface 3D principale
+│   │   └── ai_integration.py       # Intégration IA/GUI + MCTS
 │   └── exceptions/
-│       └── __init__.py        # Gestion d'erreurs
+│       └── __init__.py             # Gestion d'erreurs
+├── examples/
+│   ├── demo.py                     # Démonstration de base
+│   └── mcts_example.py             # 🆕 Exemples MCTS avancés
 ├── assets/
-│   └── pieces/               # Images des pièces (optionnel)
+│   └── pieces/                     # Images des pièces (optionnel)
 ├── docs/
-│   └── GUI_GUIDE.md         # Guide détaillé
-├── GUIDE_3D_IA.md          # Guide complet 3D+IA
-└── requirements.txt        # Dépendances
+│   ├── GUI_GUIDE.md               # Guide interface
+│   └── MCTS_GUIDE.md              # 🆕 Guide MCTS complet
+├── GUIDE_3D_IA.md                 # Guide complet 3D+IA
+└── requirements.txt               # Dépendances
 ```
+
+### 🆕 Nouveaux Modules
+
+#### `src/chess_ai/ai/mcts.py`
+- **MCTSNode** : Nœuds de l'arbre avec statistiques PUCT
+- **MCTS** : Algorithme principal avec 4 étapes
+- **Interface réseau** : Compatible avec ChessNet existant
+- **Optimisations** : Réutilisation d'arbre, cache, parallélisation
+
+#### `examples/mcts_example.py`
+- **AlphaZeroMCTSPlayer** : Joueur complet avec MCTS
+- **Benchmarks** : Tests de performance
+- **Exemples d'usage** : Parties automatiques, analyse
+
+#### `docs/MCTS_GUIDE.md`
+- **Documentation complète** : Architecture, usage, paramètres
+- **Exemples pratiques** : Code prêt à utiliser
+- **Optimisation** : Conseils performance et configuration
 
 ## ⚡ Démarrage Rapide
 
@@ -281,42 +378,90 @@ gui.run()
 
 ## 🎯 Exemples d'Utilisation
 
-### Session de Jeu Complète
+### MCTS Avancé - Session Complète
 ```python
 # Dans le dossier chessAI
 python
 
 >>> import sys
 >>> sys.path.append('src')
->>> from chess_ai.gui.ai_integration import AlphaZeroPlayer
+>>> from chess_ai.ai import MCTS, ChessNet
+>>> from chess_ai.gui.ai_integration import MCTSAlphaZeroPlayer
 >>> import chess
 
->>> # Initialiser
+>>> # Test MCTS direct
+>>> network = ChessNet()
+>>> mcts = MCTS(network, c_puct=1.4)
 >>> board = chess.Board()
->>> ai = AlphaZeroPlayer()
 
->>> # Test de l'IA
->>> analysis = ai.analyze_position(board)
->>> print("Top 3 coups suggérés:")
->>> for i, (move, prob) in enumerate(analysis['top_moves'][:3], 1):
-...     print(f"{i}. {move} ({prob:.1%})")
+>>> # 400 simulations MCTS
+>>> move_distribution = mcts.run(board, num_simulations=400)
+>>> best_move = mcts.select_move(move_distribution, temperature=0.0)
+>>> print(f"MCTS recommande: {best_move}")
 
->>> # Faire jouer l'IA
->>> move = ai.get_move(board)
->>> print(f"IA suggère: {move}")
->>> board.push(move)
->>> print(board)
+>>> # Statistiques détaillées
+>>> stats = mcts.get_action_stats()
+>>> print(f"Visites totales: {stats['total_visits']}")
+>>> print("Top 3 coups MCTS:")
+>>> sorted_moves = sorted(move_distribution.items(), key=lambda x: x[1], reverse=True)
+>>> for i, (move, prob) in enumerate(sorted_moves[:3], 1):
+...     print(f"  {i}. {move}: {prob:.4f}")
 ```
 
-### Analyse de Position
+### Comparaison Mode Direct vs MCTS
 ```python
->>> # Position d'ouverture après 1.e4 e5 2.Nf3 Nc6
->>> board = chess.Board("rnbqkb1r/pppp1ppp/5n2/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 4 3")
->>> analysis = ai.analyze_position(board)
->>> print(f"Évaluation IA: {analysis['evaluation']:+.3f}")
->>> print("Meilleurs coups:")
->>> for i, (move, prob) in enumerate(analysis['top_moves'], 1):
-...     print(f"  {i}. {move} ({prob:.1%})")
+>>> from chess_ai.gui.ai_integration import AlphaZeroPlayer
+
+>>> # Mode évaluation directe (rapide)
+>>> ai_direct = AlphaZeroPlayer(use_mcts=False)
+>>> analysis_direct = ai_direct.get_move_analysis(board)
+>>> print(f"Mode direct - Top coup: {analysis_direct['top_moves'][0]}")
+
+>>> # Mode MCTS (précis)
+>>> ai_mcts = AlphaZeroPlayer(use_mcts=True, mcts_simulations=600)
+>>> analysis_mcts = ai_mcts.get_move_analysis(board)
+>>> print(f"Mode MCTS - Top coup: {analysis_mcts['top_moves'][0]}")
+>>> print(f"Simulations effectuées: {analysis_mcts['mcts_simulations']}")
+>>> print(f"Visites MCTS: {analysis_mcts['mcts_visits']}")
+```
+
+### Partie MCTS vs MCTS
+```python
+>>> from examples.mcts_example import AlphaZeroMCTSPlayer, play_game
+
+>>> # Deux joueurs MCTS avec paramètres différents
+>>> player_aggressive = AlphaZeroMCTSPlayer(
+...     mcts_simulations=400,
+...     c_puct=2.0,        # Plus exploratoire
+...     temperature=0.5    # Plus créatif
+... )
+
+>>> player_defensive = AlphaZeroMCTSPlayer(
+...     mcts_simulations=600,
+...     c_puct=1.0,        # Plus conservateur  
+...     temperature=0.1    # Plus déterministe
+... )
+
+>>> # Partie automatique
+>>> result = play_game(player_aggressive, player_defensive, max_moves=30)
+>>> print(f"Résultat: {result}")
+```
+
+### Analyse Position Complexe avec MCTS
+```python
+>>> # Position tactique du milieu de partie
+>>> fen = "r1bq1rk1/ppp2ppp/2n2n2/2b1p3/2B1P3/3P1N2/PPP2PPP/RNBQR1K1 w - - 0 8"
+>>> board = chess.Board(fen)
+
+>>> # Analyse MCTS approfondie
+>>> ai_expert = AlphaZeroPlayer(use_mcts=True, mcts_simulations=1200, c_puct=1.6)
+>>> analysis = ai_expert.get_move_analysis(board, top_k=10)
+
+>>> print(f"Position complexe - Évaluation: {analysis['evaluation']:+.3f}")
+>>> print(f"MCTS - {analysis['mcts_simulations']} simulations, {analysis['mcts_visits']} visites")
+>>> print("\nTop 5 coups MCTS:")
+>>> for i, (move, prob) in enumerate(analysis['top_moves'][:5], 1):
+...     print(f"  {i}. {move}: {prob:.4f} ({prob*100:.1f}%)")
 ```
 
 ## 🛠️ Résolution de Problèmes
@@ -482,7 +627,7 @@ chess_ai/
 │   │   └── piece_renderer.py   # Rendu des pièces
 │   ├── exceptions/             # Exceptions personnalisées
 │   │   └── __init__.py         # Gestion d'erreurs robuste
-│   └── utils/                  # Utilitaires
+│   └── utils/                  # Utilitairespython launch_gui.py
 │       ├── validation.py       # Validation des entrées
 │       └── logging_config.py   # Configuration logging
 ├── tests/                      # Tests unitaires
