@@ -122,23 +122,31 @@ def encode_board(
 
 def move_to_index(move: chess.Move) -> int:
     """
-    Convertit un mouvement en index pour la politique.
+    🚀 CORRECTION : Convertit un coup d'échecs en index pour le réseau neuronal.
 
-    Utilise l'encodage : from_square * 64 + to_square + promotion_offset
+    Mapping unifié basé sur les squares de départ et d'arrivée.
+
+    Args:
+        move: Coup d'échecs
+
+    Returns:
+        Index entre 0 et 4671
     """
-    base_index = move.from_square * 64 + move.to_square
+    from_square = move.from_square
+    to_square = move.to_square
 
-    # Offset pour les promotions
+    # Mapping basique : 64*64 = 4096 combinaisons possibles
+    base_index = from_square * 64 + to_square
+
+    # Gérer les promotions
     if move.promotion:
-        promotion_offset = {
-            chess.QUEEN: 0,
-            chess.ROOK: 4096,
-            chess.BISHOP: 8192,
-            chess.KNIGHT: 12288,
-        }
-        return base_index + promotion_offset[move.promotion]
+        # Ajouter offset pour les promotions (4 types × 64 positions = 256)
+        promotion_offset = 4096
+        promotion_type = move.promotion - 1  # 0-3 pour Queen, Rook, Bishop, Knight
+        base_index = promotion_offset + to_square * 4 + promotion_type
 
-    return base_index
+    # S'assurer que l'index est dans les limites
+    return min(base_index, 4671)  # 4672 - 1
 
 
 def index_to_move(index: int) -> chess.Move:
@@ -255,36 +263,6 @@ class ChessNet(nn.Module):
         value = torch.tanh(self.value_fc2(value))
 
         return policy_logits, value
-
-
-def move_to_index(move: chess.Move) -> int:
-    """
-    Convertit un coup d'échecs en index pour le réseau neuronal.
-
-    Mapping simplifié basé sur les squares de départ et d'arrivée.
-
-    Args:
-        move: Coup d'échecs
-
-    Returns:
-        Index entre 0 et 4671
-    """
-    from_square = move.from_square
-    to_square = move.to_square
-
-    # Mapping basique : 64*64 = 4096 combinaisons possibles
-    # + promotions et autres mouvements spéciaux
-    base_index = from_square * 64 + to_square
-
-    # Gérer les promotions
-    if move.promotion:
-        # Ajouter offset pour les promotions (4 types × 64 positions = 256)
-        promotion_offset = 4096
-        promotion_type = move.promotion - 1  # 0-3 pour Queen, Rook, Bishop, Knight
-        base_index = promotion_offset + to_square * 4 + promotion_type
-
-    # S'assurer que l'index est dans les limites
-    return min(base_index, 4671)  # 4672 - 1
 
 
 def decode_policy(

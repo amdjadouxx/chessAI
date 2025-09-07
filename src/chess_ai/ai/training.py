@@ -53,7 +53,7 @@ class TrainingConfig:
     # Auto-jeu
     games_per_iteration: int = 100
     max_game_length: int = 200
-    save_interval: int = 10  # Sauvegarder tous les N itérations
+    save_interval: int = 2  # Sauvegarder tous les N itérations
 
     # Chemins
     models_dir: str = "models"
@@ -160,6 +160,7 @@ class SelfPlayTrainer:
         """
         board = chess.Board()
         positions = []
+        board_positions = []  # 🚀 Stockfish : Stocker les boards pour l'analyse
         policies = []
         moves_played = []
 
@@ -177,6 +178,9 @@ class SelfPlayTrainer:
             # Encoder la position
             position_tensor = encode_board(board)
             positions.append(position_tensor)
+
+            # 🚀 Stocker aussi la position board pour l'analyse Stockfish
+            board_positions.append(board.copy())
 
             # Obtenir la température pour ce coup
             temperature = self.get_temperature(move_count)
@@ -205,8 +209,11 @@ class SelfPlayTrainer:
         # Résultat de la partie
         result = board.result()
 
-        # Calculer les valeurs finales (rewards)
-        values = self._calculate_values(result, len(positions))
+        # 🚀 Calculer les valeurs avec Stockfish si possible
+        try:
+            values = self._calculate_stockfish_values(board_positions, result)
+        except:
+            values = self._calculate_values(result, len(positions))
 
         if verbose:
             print(f"🏁 Partie terminée: {result} en {move_count} coups")
@@ -248,6 +255,69 @@ class SelfPlayTrainer:
                 values.append(-final_value)
 
         return values
+
+    def _calculate_stockfish_values(
+        self, positions: List[chess.Board], final_result: str
+    ) -> List[float]:
+        """
+        🚀 Calcule les valeurs précises avec Stockfish !
+
+        Au lieu d'utiliser seulement le résultat final, on évalue
+        chaque position individuellement avec Stockfish.
+        """
+        try:
+            from .reference_evaluator import get_reference_evaluator
+
+            reference_evaluator = get_reference_evaluator()
+            values = []
+            total_positions = len(positions)
+
+            print(f"   📊 Évaluation de {total_positions} positions...")
+
+            for i, board in enumerate(positions):
+                try:
+                    # Évaluation Stockfish de la position
+                    stockfish_eval = reference_evaluator.evaluate_position(board)
+
+                    # Convertir en valeur [-1, 1]
+                    # Stockfish donne des centipawns → normaliser
+                    if abs(stockfish_eval) > 1000:  # Mat forcé
+                        value = 1.0 if stockfish_eval > 0 else -1.0
+                    else:
+                        # Fonction sigmoïde pour normaliser les centipawns
+                        value = np.tanh(stockfish_eval / 400.0)  # 400cp = ~0.76
+
+                    # Ajuster selon le joueur à jouer
+                    if board.turn == chess.BLACK:
+                        value = -value  # Inverser pour les noirs
+
+                    values.append(value)
+
+                    # Progress update
+                    if (i + 1) % 20 == 0:
+                        print(f"      {i+1}/{total_positions} positions évaluées...")
+
+                except Exception as e:
+                    print(f"⚠️ Erreur évaluation position {i}: {e}")
+                    # Fallback sur l'ancienne méthode
+                    if final_result == "1-0":
+                        fallback_value = 1.0 if i % 2 == 0 else -1.0
+                    elif final_result == "0-1":
+                        fallback_value = -1.0 if i % 2 == 0 else 1.0
+                    else:
+                        fallback_value = 0.0
+                    values.append(fallback_value)
+
+            print(f"   ✅ Évaluation Stockfish terminée !")
+            print(
+                f"   📈 Valeurs moyennes: {np.mean(values):.3f} (±{np.std(values):.3f})"
+            )
+
+            return values
+
+        except ImportError:
+            print("⚠️ Stockfish non disponible, utilisation des valeurs finales")
+            return self._calculate_values(final_result, len(positions))
 
     def generate_self_play_data(
         self, num_games: int, verbose: bool = True
@@ -398,8 +468,11 @@ class SelfPlayTrainer:
                 # Forward pass
                 pred_policies, pred_values = self.network(batch_positions)
 
-                # Loss
-                policy_loss = nn.CrossEntropyLoss()(pred_policies, batch_policies)
+                # 🚀 CORRECTION CRITIQUE : Utiliser KLDivLoss pour les probabilités
+                policy_loss = torch.nn.KLDivLoss(reduction="batchmean")(
+                    torch.log_softmax(pred_policies, dim=1),
+                    torch.softmax(batch_policies, dim=1),
+                )
                 value_loss = nn.MSELoss()(pred_values, batch_values)
                 total_batch_loss = policy_loss + value_loss
 
@@ -529,6 +602,22 @@ class SelfPlayTrainer:
             self.config.games_per_iteration, verbose=verbose
         )
 
+        # 🔄 NOUVEAU : Évaluation et adaptation automatique pour les entraîneurs hybrides
+        if hasattr(self, "_evaluate_model_performance") and hasattr(
+            self, "_adapt_training_parameters"
+        ):
+            if verbose:
+                print(f"\n🎯 Évaluation de la performance du modèle...")
+
+            # Évaluer la performance sur les parties récentes
+            performance_score = self._evaluate_model_performance(games_data)
+
+            # Adapter les paramètres automatiquement
+            self._adapt_training_parameters(performance_score)
+
+            if verbose:
+                print(f"✅ Adaptation terminée\n")
+
         # 2. Entraînement du réseau
         training_metrics = self.train_network(games_data, verbose=verbose)
 
@@ -566,6 +655,97 @@ class SelfPlayTrainer:
             print(f"📊 Loss totale: {training_metrics['total_loss']:.4f}")
 
         return iteration_data
+
+    def train_single_game(
+        self, game_data: GameData, verbose: bool = False
+    ) -> Dict[str, float]:
+        """
+        🚀 NOUVEAU : Entraîne le réseau sur une seule partie.
+
+        Args:
+            game_data: Données d'une partie
+            verbose: Afficher les détails
+
+        Returns:
+            Métriques d'entraînement
+        """
+        if verbose:
+            print(f"🧠 Entraînement sur une partie ({game_data.game_length} coups)...")
+
+        # Préparer les données d'une seule partie
+        positions, target_policies, target_values = self.prepare_training_data(
+            [game_data]
+        )
+        positions = positions.to(self.device)
+        target_policies = target_policies.to(self.device)
+        target_values = target_values.to(self.device).unsqueeze(1)
+
+        if verbose:
+            print(f"  📊 {len(positions)} exemples d'entraînement")
+
+        # Entraînement sur quelques époques seulement pour éviter l'overfitting
+        epochs = min(3, self.config.epochs_per_iteration)  # Max 3 époques
+
+        # DataLoader avec batch plus petit
+        dataset = torch.utils.data.TensorDataset(
+            positions, target_policies, target_values
+        )
+        batch_size = min(8, len(positions))  # Batch adaptatif
+        dataloader = torch.utils.data.DataLoader(
+            dataset, batch_size=batch_size, shuffle=True
+        )
+
+        # Entraînement
+        self.network.train()
+        total_loss = 0.0
+        policy_loss_total = 0.0
+        value_loss_total = 0.0
+        num_batches = 0
+
+        for epoch in range(epochs):
+            for batch_positions, batch_policies, batch_values in dataloader:
+                self.optimizer.zero_grad()
+
+                # Forward pass
+                pred_policies, pred_values = self.network(batch_positions)
+
+                # 🚀 CORRECTION CRITIQUE : Utiliser KLDivLoss pour les probabilités
+                policy_loss = torch.nn.KLDivLoss(reduction="batchmean")(
+                    torch.log_softmax(pred_policies, dim=1),
+                    torch.softmax(batch_policies, dim=1),
+                )
+                value_loss = nn.MSELoss()(pred_values, batch_values)
+                total_batch_loss = policy_loss + value_loss
+
+                # Backward pass
+                total_batch_loss.backward()
+                self.optimizer.step()
+
+                total_loss += total_batch_loss.item()
+                policy_loss_total += policy_loss.item()
+                value_loss_total += value_loss.item()
+                num_batches += 1
+
+        avg_total_loss = total_loss / num_batches if num_batches > 0 else 0
+        avg_policy_loss = policy_loss_total / num_batches if num_batches > 0 else 0
+        avg_value_loss = value_loss_total / num_batches if num_batches > 0 else 0
+
+        if verbose:
+            print(f"  ✅ Entraînement sur partie terminé:")
+            print(f"    Loss totale: {avg_total_loss:.4f}")
+            print(f"    Loss politique: {avg_policy_loss:.4f}")
+            print(f"    Loss valeur: {avg_value_loss:.4f}")
+
+        # Mettre à jour MCTS avec le nouveau modèle
+        self.mcts = MCTS(
+            self.network, c_puct=self.config.c_puct, device=str(self.device)
+        )
+
+        return {
+            "total_loss": avg_total_loss,
+            "policy_loss": avg_policy_loss,
+            "value_loss": avg_value_loss,
+        }
 
     def train(self, num_iterations: int, verbose: bool = True):
         """

@@ -28,6 +28,7 @@ except ImportError:
 # Import de l'entraînement hybride
 try:
     from ..ai.hybrid_training import HybridSelfPlayTrainer, HybridTrainingConfig
+
     HYBRID_TRAINING_AVAILABLE = True
 except ImportError:
     HYBRID_TRAINING_AVAILABLE = False
@@ -141,11 +142,28 @@ class SimpleChessGUI3D:
         self.last_move_time = 0
         self.game_paused = False
 
+        # Mode IA continue contre joueur
+        self.ai_auto_play = False  # IA joue automatiquement ses coups
+        self.ai_delay = 1500  # Délai avant que l'IA joue (ms)
+        self.waiting_for_ai = False  # En attente du coup IA
+        self.ai_move_time = 0  # Temps du dernier coup pour l'IA
+        self.ai_color = None  # Couleur de l'IA (None = auto-détection)
+        self.player_color = None  # Couleur du joueur (None = auto-détection)
+
+        # Entraînement pendant le jeu
+        self.learning_from_games = (
+            True  # 🚀 ACTIVÉ PAR DÉFAUT ! Apprendre des parties contre le joueur
+        )
+        self.current_game_moves = []  # Mouvements de la partie actuelle
+        self.game_start_time = None  # Temps de début de partie
+        self.collected_games = []  # Parties collectées pour l'entraînement
+
         # Mode d'entraînement
         self.training_mode = False
         self.trainer = None
         self.hybrid_trainer = None  # Nouveau : trainer hybride
         self.use_hybrid_training = True  # Par défaut, utiliser l'hybride
+        self.use_hybrid_trainer = True  # Alias pour compatibilité
         self.training_iteration = 0
         self.training_games_played = 0
         self.current_training_game = None
@@ -155,11 +173,11 @@ class SimpleChessGUI3D:
         # Entraînement automatique jusqu'à convergence
         self.auto_training_active = False
         self.auto_training_iteration = 0
-        self.auto_training_max_iterations = 20
+        self.auto_training_max_iterations = 100  # Augmenté de 20 à 100
         self.auto_training_target_diff = 0.25
         self.auto_training_target_corr = 0.7
         self.auto_training_paused = False
-        self.auto_training_speed = 500
+        self.auto_training_speed = 100  # Accéléré de 500 à 100ms
         self.auto_training_game_count = 0
 
         if AI_AVAILABLE:
@@ -197,7 +215,7 @@ class SimpleChessGUI3D:
                 print("   • Force immédiate de niveau maître")
             except Exception as e:
                 print(f"⚠️  IA Hybride non disponible : {e}")
-        
+
         # Préférence IA : utiliser hybride si disponible, sinon standard
         self.use_hybrid_ai = self.hybrid_ai_enabled
 
@@ -234,40 +252,78 @@ class SimpleChessGUI3D:
         try:
             # Configuration d'entraînement adaptée à l'interface
             config = TrainingConfig(
-                games_per_iteration=10,  # Moins de parties pour la démo
+                games_per_iteration=5,  # Réduit pour tests plus rapides
                 mcts_simulations=100,  # Simulations réduites pour la vitesse
                 epochs_per_iteration=3,  # Moins d'époques
                 batch_size=8,  # Batch plus petit
-                save_interval=5,  # Sauvegarder plus souvent
+                save_interval=1,  # 🚀 SAUVEGARDER APRÈS CHAQUE ITÉRATION !
             )
 
             device = "cuda" if torch.cuda.is_available() else "cpu"
-            
+
             # Entraîneur classique (AlphaZero)
             self.trainer = SelfPlayTrainer(config, device=device)
-            
-            # Entraîneur hybride (Stockfish + AlphaZero)
+
+            # Entraîneur hybride (Stockfish + AlphaZero) avec ADAPTATION AUTOMATIQUE
             if HYBRID_TRAINING_AVAILABLE:
                 hybrid_config = HybridTrainingConfig(
-                    games_per_iteration=10,
+                    games_per_iteration=5,  # Réduit pour tests plus rapides
                     mcts_simulations=50,  # Moins car Stockfish compense
                     epochs_per_iteration=3,
                     batch_size=8,
-                    save_interval=5,
+                    save_interval=1,  # 🚀 SAUVEGARDER APRÈS CHAQUE ITÉRATION !
                     use_stockfish_guidance=True,
-                    stockfish_depth=6,  # Profondeur modérée pour la vitesse
-                    hybrid_ratio=0.7,  # 70% Stockfish, 30% Neural Net
+                    stockfish_depth=15,  # 🚀 Niveau club fort (~1800-2000 ELO)
+                    # 🎲 VARIATION DE PROFONDEUR pour éviter la répétitivité
+                    vary_stockfish_depth=True,  # Activer variation
+                    depth_range=(10, 20),  # Facile à difficile
+                    depth_variation_mode="adaptive",  # Mode intelligent
+                    # 🚀 ADAPTATION AUTOMATIQUE PAR DÉFAUT !
+                    adaptive_training=True,  # Adaptation activée
+                    neural_confidence_threshold=0.8,  # Seuil de confiance initial
+                    # 🎯 ÉVALUATIONS STOCKFISH PAR DÉFAUT !
+                    use_stockfish_values=True,  # Toujours utiliser Stockfish pour les valeurs
+                    stockfish_eval_depth=15,  # 🚀 Même force pour évaluations
                 )
-                self.hybrid_trainer = HybridSelfPlayTrainer(hybrid_config, device=device)
+                self.hybrid_trainer = HybridSelfPlayTrainer(
+                    hybrid_config, device=device
+                )
                 print(f"🏋️  Entraîneur HYBRIDE initialisé sur {device}")
                 print(f"   ⚡ Force immédiate grâce à Stockfish")
+                print(f"   🎯 Évaluation précise des positions par Stockfish")
+                print(f"   📈 Neural Network apprend les VRAIES valeurs !")
+                print(f"   🎲 Variation automatique de profondeur Stockfish (10-20)")
+                print(f"   🔄 ADAPTATION AUTOMATIQUE activée par défaut")
+                print(f"   🎓 ENTRAÎNEMENT APRÈS CHAQUE PARTIE activé")
             else:
                 self.hybrid_trainer = None
                 print(f"⚠️  Entraîneur hybride non disponible")
-            
+
             print(f"🏋️  Entraîneur classique initialisé sur {device}")
             print("   • Mode entraînement disponible")
             print(f"   • Hybride: {'✅' if self.hybrid_trainer else '❌'}")
+
+            # 🚀 INFORMATION UTILISATEUR SUR LES FONCTIONNALITÉS AUTOMATIQUES
+            if self.hybrid_trainer:
+                print()
+                print("🎓 APPRENTISSAGE CONTINU ACTIVÉ PAR DÉFAUT !")
+                print("=" * 50)
+                print("✅ L'IA apprendra automatiquement de toutes vos parties")
+                print("✅ Adaptation automatique du ratio Stockfish/Neural Network")
+                print("✅ Entraînement immédiat après chaque partie")
+                print("✅ Évaluations précises avec Stockfish")
+                print()
+                print("📈 Plus vous jouez, plus l'IA s'améliore !")
+                print("🔄 Le système s'adapte selon les performances de l'IA")
+                print()
+
+            # 🚀 IMPORTANT : Définir le trainer principal pour l'interface
+            # Utiliser l'hybride si disponible, sinon le classique
+            if self.hybrid_trainer:
+                self.trainer = self.hybrid_trainer  # Le trainer principal = hybride
+                print("🎯 Trainer principal: HYBRIDE (Stockfish + Neural Network)")
+            else:
+                print("🎯 Trainer principal: CLASSIQUE (Neural Network seul)")
 
         except Exception as e:
             print(f"⚠️  Entraîneur non disponible : {e}")
@@ -278,7 +334,7 @@ class SimpleChessGUI3D:
         """Active/désactive le mode d'entraînement."""
         # Utiliser le trainer hybride si disponible, sinon le classique
         current_trainer = self.hybrid_trainer if self.hybrid_trainer else self.trainer
-        
+
         if not current_trainer:
             print("❌ Mode entraînement non disponible")
             return
@@ -286,7 +342,9 @@ class SimpleChessGUI3D:
         self.training_mode = not self.training_mode
 
         if self.training_mode:
-            trainer_type = "HYBRIDE (Stockfish+NN)" if self.hybrid_trainer else "CLASSIQUE"
+            trainer_type = (
+                "HYBRIDE (Stockfish+NN)" if self.hybrid_trainer else "CLASSIQUE"
+            )
             print(f"🏋️  MODE ENTRAÎNEMENT {trainer_type} ACTIVÉ")
             print("🚀 Démarrage automatique de l'entraînement...")
             # Démarrer automatiquement l'entraînement
@@ -299,12 +357,14 @@ class SimpleChessGUI3D:
         """Démarre une itération d'entraînement avec visualisation."""
         # Utiliser le trainer hybride si disponible, sinon le classique
         current_trainer = self.hybrid_trainer if self.hybrid_trainer else self.trainer
-        
+
         if not current_trainer or not self.training_mode:
             return
 
         trainer_type = "hybride" if self.hybrid_trainer else "classique"
-        print(f"\n🚀 Démarrage itération d'entraînement {trainer_type} #{self.training_iteration + 1}")
+        print(
+            f"\n🚀 Démarrage itération d'entraînement {trainer_type} #{self.training_iteration + 1}"
+        )
 
         # Réinitialiser pour une nouvelle partie d'entraînement
         self.environment.board = chess.Board()
@@ -328,14 +388,32 @@ class SimpleChessGUI3D:
 
     def start_automatic_training(self):
         """Lance l'entraînement automatique jusqu'à convergence avec visualisation."""
-        if not self.trainer:
+        # 🚀 UTILISER L'ENTRAÎNEUR HYBRIDE PAR DÉFAUT si disponible
+        current_trainer = self.hybrid_trainer if self.hybrid_trainer else self.trainer
+
+        if not current_trainer:
             print("❌ Entraîneur non disponible")
             return
 
-        print("\n🎯 ENTRAÎNEMENT AUTOMATIQUE JUSQU'À CONVERGENCE")
+        trainer_type = (
+            "HYBRIDE avec adaptation automatique"
+            if self.hybrid_trainer
+            else "CLASSIQUE"
+        )
+
+        print(f"\n🎯 ENTRAÎNEMENT AUTOMATIQUE {trainer_type}")
         print("=" * 60)
         print("L'IA va s'entraîner automatiquement jusqu'à atteindre")
         print("des performances satisfaisantes par rapport à Stockfish!")
+
+        if self.hybrid_trainer:
+            print()
+            print("🔄 FONCTIONNALITÉS ACTIVÉES PAR DÉFAUT:")
+            print("  • Adaptation automatique du ratio Stockfish/NN")
+            print("  • Entraînement immédiat après chaque partie")
+            print("  • Évaluations Stockfish précises")
+            print("  • Apprentissage des meilleures politiques Stockfish")
+
         print()
         print("🎮 CONTRÔLES PENDANT L'ENTRAÎNEMENT:")
         print("  • ÉCHAP : Arrêter l'entraînement")
@@ -347,12 +425,15 @@ class SimpleChessGUI3D:
         # Configuration pour l'entraînement automatique
         self.auto_training_active = True
         self.auto_training_iteration = 0
-        self.auto_training_max_iterations = 20
+        self.auto_training_max_iterations = 30
         self.auto_training_target_diff = 0.25
         self.auto_training_target_corr = 0.7
         self.auto_training_paused = False
         self.auto_training_speed = 500  # ms entre les coups
         self.auto_training_game_count = 0
+
+        # Utiliser le bon trainer
+        self.trainer = current_trainer
 
         # Démarrer le mode d'entraînement
         self.training_mode = True
@@ -361,22 +442,32 @@ class SimpleChessGUI3D:
         print(f"  • Écart moyen < {self.auto_training_target_diff}")
         print(f"  • Corrélation > {self.auto_training_target_corr}")
         print(f"  • Maximum {self.auto_training_max_iterations} itérations")
+
+        if self.hybrid_trainer:
+            config = self.hybrid_trainer.hybrid_config
+            print(f"  • Profondeur Stockfish: {config.stockfish_depth}")
+            print(f"  • Seuil confiance NN: {config.neural_confidence_threshold:.2f}")
+
         print()
         print("🚀 Démarrage de l'entraînement automatique...")
 
     def handle_training_auto_play(self):
         """Gère l'auto-jeu en mode entraînement."""
         current_time = pygame.time.get_ticks()
-        
+
         # Vérifier si on doit redémarrer automatiquement après une itération
-        if (self.training_mode and 
-            not self.training_auto_play and 
-            hasattr(self, 'last_move_time') and 
-            current_time > self.last_move_time):
-            print(f"🚀 Redémarrage automatique de l'itération {self.training_iteration + 1}")
+        if (
+            self.training_mode
+            and not self.training_auto_play
+            and hasattr(self, "last_move_time")
+            and current_time > self.last_move_time
+        ):
+            print(
+                f"🚀 Redémarrage automatique de l'itération {self.training_iteration + 1}"
+            )
             self.start_training_iteration()
             return
-        
+
         if not self.training_auto_play or not self.trainer:
             return
 
@@ -426,8 +517,143 @@ class SimpleChessGUI3D:
 
         print(f"🏁 Partie {self.training_games_played}: {result}")
 
+        # 🚀 ENTRAÎNEMENT IMMÉDIAT APRÈS CHAQUE PARTIE (PAR DÉFAUT) !
+        current_trainer = self.hybrid_trainer if self.hybrid_trainer else self.trainer
+
+        if current_trainer:
+            try:
+                # Créer les données de la partie qui vient de se terminer
+                from ..ai.training import GameData
+                from ..ai.hybrid_training import HybridGameData
+                from ..ai.network import encode_board
+
+                # Reconstruire les données de la partie
+                board = chess.Board()
+                positions = []
+                board_positions = []
+                moves = []
+
+                # Rejouer la partie pour extraire les positions
+                for move_san in self.environment.board.move_stack:
+                    positions.append(encode_board(board))
+                    board_positions.append(board.copy())
+                    moves.append(move_san.uci())
+                    board.push(move_san)
+
+                if positions:  # Seulement si on a des positions
+                    print(f"🧠 Entraînement immédiat sur la partie terminée...")
+
+                    # 🚀 UTILISER L'ENTRAÎNEMENT HYBRIDE PAR DÉFAUT si disponible
+                    if self.hybrid_trainer and hasattr(
+                        self.hybrid_trainer, "train_single_game_hybrid"
+                    ):
+                        print(f"   📊 Mode HYBRIDE avec adaptation automatique...")
+
+                        # Calculer les valeurs et politiques Stockfish
+                        values = self.hybrid_trainer._calculate_stockfish_values(
+                            board_positions, result
+                        )
+
+                        # Créer des politiques dummy (seront recalculées par Stockfish)
+                        policies = []
+                        stockfish_policies = []
+
+                        for board_pos in board_positions:
+                            # Politique uniforme dummy pour MCTS
+                            legal_moves = list(board_pos.legal_moves)
+                            if legal_moves:
+                                uniform_prob = 1.0 / len(legal_moves)
+                                dummy_policy = {
+                                    move: uniform_prob for move in legal_moves
+                                }
+                                policies.append(dummy_policy)
+
+                                # Politique Stockfish concentrée sur le meilleur coup
+                                try:
+                                    best_move = self.hybrid_trainer.reference_evaluator.get_best_move(
+                                        board_pos
+                                    )
+                                    if best_move and best_move in legal_moves:
+                                        stockfish_policy = {}
+                                        for move in legal_moves:
+                                            if move == best_move:
+                                                stockfish_policy[move] = 0.8
+                                            else:
+                                                stockfish_policy[move] = 0.2 / (
+                                                    len(legal_moves) - 1
+                                                )
+                                        stockfish_policies.append(stockfish_policy)
+                                    else:
+                                        stockfish_policies.append(dummy_policy)
+                                except:
+                                    stockfish_policies.append(dummy_policy)
+                            else:
+                                policies.append({})
+                                stockfish_policies.append({})
+
+                        # Créer les données de partie hybride
+                        game_data = HybridGameData(
+                            positions=positions,
+                            policies=policies,
+                            values=values,
+                            result=result,
+                            moves=moves,
+                            game_length=len(moves),
+                            stockfish_policies=stockfish_policies,
+                        )
+
+                        # Entraîner le réseau avec adaptation automatique
+                        training_metrics = self.hybrid_trainer.train_single_game_hybrid(
+                            game_data, verbose=True
+                        )
+                        print(f"   🔄 Adaptation automatique appliquée")
+
+                    elif self.trainer and hasattr(self.trainer, "train_single_game"):
+                        print(f"   📊 Mode CLASSIQUE...")
+
+                        # Entraînement classique avec évaluations Stockfish
+                        values = self.trainer._calculate_stockfish_values(
+                            board_positions, result
+                        )
+
+                        # Politiques dummy
+                        policies = []
+                        for board_pos in board_positions:
+                            legal_moves = list(board_pos.legal_moves)
+                            if legal_moves:
+                                uniform_prob = 1.0 / len(legal_moves)
+                                dummy_policy = {
+                                    move: uniform_prob for move in legal_moves
+                                }
+                                policies.append(dummy_policy)
+                            else:
+                                policies.append({})
+
+                        game_data = GameData(
+                            positions=positions,
+                            policies=policies,
+                            values=values,
+                            result=result,
+                            moves=moves,
+                            game_length=len(moves),
+                        )
+
+                        training_metrics = self.trainer.train_single_game(
+                            game_data, verbose=True
+                        )
+
+                    print(
+                        f"✅ Entraînement terminé ! Loss: {training_metrics.get('total_loss', 0):.4f}"
+                    )
+
+            except Exception as e:
+                print(f"⚠️ Erreur lors de l'entraînement automatique: {e}")
+                import traceback
+
+                traceback.print_exc()
+
         # Vérifier si on a terminé toutes les parties pour cette itération
-        if self.training_games_played >= self.trainer.config.games_per_iteration:
+        if self.training_games_played >= current_trainer.config.games_per_iteration:
             self.complete_training_iteration()
         else:
             # Commencer une nouvelle partie
@@ -444,10 +670,12 @@ class SimpleChessGUI3D:
         # En mode interface, on ne fait pas l'entraînement complet
         # (trop lourd), mais on simule la progression
         self.training_iteration += 1
-        
+
         # Continuer automatiquement l'entraînement si on est en mode training
         if self.training_mode:
-            print(f"🔄 Démarrage automatique de l'itération {self.training_iteration + 1}")
+            print(
+                f"🔄 Démarrage automatique de l'itération {self.training_iteration + 1}"
+            )
             # Petite pause de 2 secondes puis redémarrage automatique
             self.training_auto_play = False
             self.last_move_time = pygame.time.get_ticks() + 2000  # 2s de pause
@@ -516,13 +744,15 @@ class SimpleChessGUI3D:
         print(f"🏁 Partie {self.auto_training_game_count} terminée: {result}")
 
         # Vérifier si on a assez de parties pour cette itération
-        games_per_iteration = 5  # Réduit pour l'interface
+        games_per_iteration = 1  # 🚀 RAPIDE : Entraînement après chaque partie !
 
         if self.auto_training_game_count >= games_per_iteration:
             self.complete_auto_training_iteration()
         else:
-            # Petite pause entre les parties
-            self.last_auto_training_update = pygame.time.get_ticks() + 1000
+            # Pause très courte entre les parties pour accélérer
+            self.last_auto_training_update = (
+                pygame.time.get_ticks() + 200
+            )  # 200ms au lieu de 1000ms
 
     def complete_auto_training_iteration(self):
         """Complète une itération d'entraînement automatique."""
@@ -532,22 +762,28 @@ class SimpleChessGUI3D:
         print(f"\n✅ Itération {self.auto_training_iteration} terminée!")
 
         # Effectuer l'entraînement réel avec le trainer approprié
-        current_trainer = self.hybrid_trainer if self.use_hybrid_trainer else self.trainer
-        
+        current_trainer = (
+            self.hybrid_trainer if self.use_hybrid_trainer else self.trainer
+        )
+
         if current_trainer:
             try:
-                print(f"🧠 Entraînement du réseau avec trainer {'hybride' if self.use_hybrid_trainer else 'standard'}...")
-                
-                # Collecter les parties pour l'entraînement
-                # Dans une vraie implémentation, on stockerait les parties jouées
-                # Ici on fait un entraînement symbolique
-                if hasattr(current_trainer, 'train_network'):
-                    # Pour les trainers qui ont une méthode d'entraînement
-                    current_trainer.train_network()
+                print(
+                    f"🧠 Entraînement du réseau avec trainer {'hybride' if self.use_hybrid_trainer else 'standard'}..."
+                )
+
+                # 🎯 VRAIE COLLECTE : Jouer une partie avec le trainer pour obtenir les données
+                print("📊 Génération d'une partie d'entraînement...")
+                game_data = current_trainer.play_game_hybrid(verbose=False)
+                games_data = [game_data]  # Liste avec une partie
+
+                if hasattr(current_trainer, "train_network"):
+                    # Entraîner avec les vraies données de partie
+                    current_trainer.train_network(games_data)
                     print("📈 Réseau entraîné avec succès!")
                 else:
                     print("⚠️ Pas de méthode d'entraînement disponible")
-                    
+
             except Exception as e:
                 print(f"⚠️ Erreur pendant l'entraînement: {e}")
 
@@ -558,9 +794,16 @@ class SimpleChessGUI3D:
             self.auto_training_active = False
             self.training_mode = False
         else:
-            print(f"🔄 Démarrage itération {self.auto_training_iteration + 1}")
+            progress = (
+                self.auto_training_iteration / self.auto_training_max_iterations
+            ) * 100
+            print(
+                f"🔄 Démarrage itération {self.auto_training_iteration + 1} (Progrès: {progress:.1f}%)"
+            )
             # Petite pause entre les itérations
-            self.last_auto_training_update = pygame.time.get_ticks() + 2000
+            self.last_auto_training_update = (
+                pygame.time.get_ticks() + 1000
+            )  # 1s au lieu de 2s
 
     def get_3d_offset(self, file: int, rank: int) -> Tuple[int, int]:
         """Calcule l'offset 3D pour une case donnée."""
@@ -860,37 +1103,49 @@ class SimpleChessGUI3D:
             text_rect = text_surface.get_rect(center=(x_right, y))
             self.screen.blit(text_surface, text_rect)
 
-    def get_ai_move(self, board: chess.Board, time_budget: float = 2.0) -> Optional[chess.Move]:
+    def get_ai_move(
+        self,
+        board: chess.Board,
+        time_budget: float = 15.0,  # 🚀 Plus de force par défaut
+    ) -> Optional[chess.Move]:
         """
         Obtient un coup de l'IA (trainer hybride ou standard selon configuration).
-        
+
         Args:
             board: Position actuelle
             time_budget: Budget de temps en secondes
-            
+
         Returns:
             Meilleur coup selon l'IA, ou None si erreur
         """
         # Utiliser le trainer hybride si activé
         if self.use_hybrid_trainer and self.hybrid_trainer:
             try:
-                move = self.hybrid_trainer.mcts.select_move(board, num_simulations=200)
+                # Utiliser MCTS correctement : run puis select_move
+                move_distribution = self.hybrid_trainer.mcts.run(
+                    board, num_simulations=200
+                )
+                move = self.hybrid_trainer.mcts.select_move(
+                    move_distribution, temperature=0.1
+                )
                 if move:
                     print(f"🚀 Trainer Hybride: {move}")
                 return move
             except Exception as e:
                 print(f"⚠️ Erreur Trainer Hybride, fallback sur trainer standard: {e}")
-        
+
         # Utiliser le trainer standard
         if self.trainer:
             try:
-                move = self.trainer.mcts.select_move(board, num_simulations=200)
+                # Utiliser MCTS correctement : run puis select_move
+                move_distribution = self.trainer.mcts.run(board, num_simulations=200)
+                move = self.trainer.mcts.select_move(move_distribution, temperature=0.1)
                 if move:
                     print(f"🤖 Trainer Standard: {move}")
                 return move
             except Exception as e:
                 print(f"⚠️ Erreur Trainer Standard: {e}")
-        
+
         # Fallback sur l'ancien système d'IA si disponible
         if self.use_hybrid_ai and self.hybrid_ai_enabled:
             try:
@@ -898,21 +1153,25 @@ class SimpleChessGUI3D:
                 context = GameContext(
                     time_left=time_budget,
                     move_number=len(board.move_stack) + 1,
-                    is_critical=board.is_check() or len(list(board.legal_moves)) < 5
+                    is_critical=board.is_check() or len(list(board.legal_moves)) < 5,
                 )
-                
+
                 # Obtenir la décision de l'IA hybride
-                decision = self.hybrid_ai.get_move(board, context, mode=self.current_ai_mode)
-                
+                decision = self.hybrid_ai.get_move(
+                    board, context, mode=self.current_ai_mode
+                )
+
                 # Afficher les informations de la décision
-                print(f"� IA Hybride Legacy: {decision.move} (eval: {decision.evaluation:.3f}, "
-                      f"confiance: {decision.confidence:.3f}, méthode: {decision.method_used})")
-                
+                print(
+                    f"� IA Hybride Legacy: {decision.move} (eval: {decision.evaluation:.3f}, "
+                    f"confiance: {decision.confidence:.3f}, méthode: {decision.method_used})"
+                )
+
                 return decision.move
-                
+
             except Exception as e:
                 print(f"⚠️ Erreur IA Hybride Legacy: {e}")
-        
+
         # Dernier fallback sur l'IA standard
         if self.ai_enabled and self.ai_player:
             try:
@@ -922,16 +1181,16 @@ class SimpleChessGUI3D:
                 return move
             except Exception as e:
                 print(f"⚠️ Erreur IA Standard Legacy: {e}")
-        
+
         return None
 
     def get_ai_analysis(self, board: chess.Board) -> Optional[dict]:
         """
         Obtient une analyse de position de l'IA.
-        
+
         Args:
             board: Position à analyser
-            
+
         Returns:
             Dictionnaire d'analyse ou None
         """
@@ -939,43 +1198,401 @@ class SimpleChessGUI3D:
             try:
                 # Analyse avec IA hybride
                 context = GameContext(
-                    time_left=5.0,  # Plus de temps pour l'analyse
-                    move_number=len(board.move_stack) + 1
+                    time_left=15.0,  # 🚀 Plus de temps = Force supérieure (depth 15)
+                    move_number=len(board.move_stack) + 1,
                 )
-                
-                decision = self.hybrid_ai.get_move(board, context, mode=AIMode.HYBRID_DEEP)
-                
+
+                decision = self.hybrid_ai.get_move(
+                    board, context, mode=AIMode.HYBRID_DEEP
+                )
+
                 return {
-                    'best_move': decision.move,
-                    'evaluation': decision.evaluation,
-                    'confidence': decision.confidence,
-                    'method': decision.method_used,
-                    'principal_variation': decision.principal_variation,
-                    'alternatives': decision.alternative_moves
+                    "best_move": decision.move,
+                    "evaluation": decision.evaluation,
+                    "confidence": decision.confidence,
+                    "method": decision.method_used,
+                    "principal_variation": decision.principal_variation,
+                    "alternatives": decision.alternative_moves,
                 }
-                
+
             except Exception as e:
                 print(f"⚠️ Erreur analyse IA Hybride: {e}")
-        
+
         # Fallback sur IA standard
         if self.ai_enabled and self.ai_player:
             try:
                 return self.ai_player.get_move_analysis(board)
             except Exception as e:
                 print(f"⚠️ Erreur analyse IA Standard: {e}")
-        
+
         return None
 
     def toggle_ai_mode(self):
         """Change le mode de l'IA hybride."""
         if not self.hybrid_ai_enabled:
             return
-        
+
         modes = list(AIMode)
         current_index = modes.index(self.current_ai_mode)
         self.current_ai_mode = modes[(current_index + 1) % len(modes)]
-        
+
         print(f"🔄 Mode IA: {self.current_ai_mode.value}")
+
+    def toggle_ai_continuous(self):
+        """Active/désactive l'IA continue."""
+        self.ai_auto_play = not self.ai_auto_play
+        if self.ai_auto_play:
+            print("🤖 IA CONTINUE ACTIVÉE - L'IA jouera automatiquement ses coups")
+            print("   • L'IA joue automatiquement après vos coups")
+            print(
+                "   • Délai configurable avec +/- (actuellement {}ms)".format(
+                    self.ai_delay
+                )
+            )
+            # Initialiser le système de collecte de partie si pas déjà fait
+            if not self.current_game_moves:
+                self.start_new_game_collection()
+
+            # Si on ne connaît pas encore les couleurs, essayer de détecter
+            if self.ai_color is None:
+                # Si c'est le début de partie et que l'IA a déjà joué, elle a les blancs
+                if len(self.environment.board.move_stack) == 1:
+                    self.ai_color = chess.WHITE
+                    self.player_color = chess.BLACK
+                    print("🎯 Détection: IA = Blancs, Joueur = Noirs")
+                # Sinon, par défaut l'IA prend la couleur du tour actuel
+                elif len(self.environment.board.move_stack) > 0:
+                    self.ai_color = self.environment.board.turn
+                    self.player_color = not self.environment.board.turn
+                    ai_name = "Blancs" if self.ai_color else "Noirs"
+                    player_name = "Blancs" if self.player_color else "Noirs"
+                    print(f"🎯 Détection: IA = {ai_name}, Joueur = {player_name}")
+
+            # Si c'est déjà le tour de l'IA, la déclencher
+            if (
+                self.ai_color is not None
+                and self.environment.board.turn == self.ai_color
+                and not self.environment.board.is_game_over()
+                and not self.waiting_for_ai
+            ):
+                self.waiting_for_ai = True
+                self.ai_move_time = pygame.time.get_ticks() + self.ai_delay
+                print(f"⏳ L'IA va jouer dans {self.ai_delay}ms...")
+        else:
+            print("🎮 IA MANUELLE - Appuyez sur 'I' pour chaque coup IA")
+            self.waiting_for_ai = False
+
+    def toggle_learning_mode(self):
+        """Active/désactive l'apprentissage pendant le jeu."""
+        self.learning_from_games = not self.learning_from_games
+        if self.learning_from_games:
+            print("🧠 APPRENTISSAGE ACTIVÉ - L'IA apprend de vos parties")
+            print("   • Les parties sont collectées pour l'entraînement")
+            print("   • L'IA s'améliore au fil des parties")
+            if not self.current_game_moves:
+                self.start_new_game_collection()
+        else:
+            print("🎯 MODE NORMAL - Pas d'apprentissage")
+
+    def start_new_game_collection(self):
+        """Démarre la collecte d'une nouvelle partie."""
+        self.current_game_moves = []
+        self.game_start_time = pygame.time.get_ticks()
+
+        # Message adapté selon l'entraîneur disponible
+        trainer_type = (
+            "HYBRIDE avec adaptation automatique"
+            if self.hybrid_trainer
+            else "CLASSIQUE"
+        )
+        print(f"📝 Nouvelle partie - L'IA apprendra avec l'entraîneur {trainer_type}")
+        if self.hybrid_trainer:
+            print(f"   🔄 Adaptation automatique active")
+            print(f"   🎯 Évaluations Stockfish précises")
+
+    def add_move_to_collection(self, move, board_before_move):
+        """Ajoute un mouvement à la collection de la partie actuelle."""
+        if self.learning_from_games:
+            move_data = {
+                "move": move,
+                "board_fen": board_before_move.fen(),
+                "timestamp": pygame.time.get_ticks() - self.game_start_time,
+                "player": "human" if board_before_move.turn else "ai",
+            }
+            self.current_game_moves.append(move_data)
+
+    def finish_game_collection(self, result):
+        """Termine la collecte de la partie et la sauvegarde pour l'entraînement."""
+        if self.learning_from_games and self.current_game_moves:
+            game_data = {
+                "moves": self.current_game_moves,
+                "result": result,
+                "duration": pygame.time.get_ticks() - self.game_start_time,
+                "timestamp": pygame.time.get_ticks(),
+            }
+            self.collected_games.append(game_data)
+
+            print(
+                f"📚 Partie sauvegardée ({len(self.current_game_moves)} coups, résultat: {result})"
+            )
+            print(f"   Total parties collectées: {len(self.collected_games)}")
+
+            # 🚀 NOUVEAU : Entraîner après CHAQUE partie (pas seulement après 5)
+            if (
+                self.trainer and len(self.current_game_moves) > 5
+            ):  # Parties assez longues
+                print("🎓 Entraînement immédiat sur la partie terminée...")
+                self.run_micro_training()
+
+            # Redémarrer la collecte pour la prochaine partie
+            self.start_new_game_collection()
+
+    def run_micro_training(self):
+        """Lance un micro-entraînement avec les parties collectées."""
+        # 🚀 UTILISER L'ENTRAÎNEUR HYBRIDE PAR DÉFAUT si disponible
+        current_trainer = self.hybrid_trainer if self.hybrid_trainer else self.trainer
+
+        if not current_trainer or len(self.collected_games) < 2:
+            return
+
+        try:
+            trainer_type = (
+                "HYBRIDE avec adaptation automatique"
+                if self.hybrid_trainer
+                else "CLASSIQUE"
+            )
+            print(
+                f"🏋️ MICRO-ENTRAÎNEMENT {trainer_type} - Apprentissage des dernières parties..."
+            )
+
+            # 🚀 VRAI ENTRAÎNEMENT avec les parties collectées !
+            from ..ai.training import GameData
+            from ..ai.hybrid_training import HybridGameData
+            from ..ai.network import encode_board
+
+            games_trained = 0
+            total_loss = 0.0
+
+            for game_data in self.collected_games[
+                -3:
+            ]:  # Prendre les 3 dernières parties
+                try:
+                    # Reconstruire la partie depuis les coups stockés
+                    board = chess.Board()
+                    positions = []
+                    board_positions = []
+                    moves = []
+
+                    for move_info in game_data["moves"]:
+                        if "move" in move_info:
+                            move = move_info["move"]
+                            positions.append(encode_board(board))
+                            board_positions.append(board.copy())
+                            moves.append(move.uci())
+                            board.push(move)
+
+                    if len(positions) > 5:  # Seulement si la partie est assez longue
+                        result = game_data["result"]
+
+                        # 🚀 UTILISER L'ENTRAÎNEUR HYBRIDE EN PRIORITÉ
+                        if self.hybrid_trainer and hasattr(
+                            self.hybrid_trainer, "train_single_game_hybrid"
+                        ):
+                            # Calculer valeurs Stockfish
+                            values = self.hybrid_trainer._calculate_stockfish_values(
+                                board_positions, result
+                            )
+
+                            # Politiques simplifiées
+                            policies = []
+                            stockfish_policies = []
+
+                            for board_pos in board_positions:
+                                legal_moves = list(board_pos.legal_moves)
+                                if legal_moves:
+                                    uniform_prob = 1.0 / len(legal_moves)
+                                    dummy_policy = {
+                                        move: uniform_prob for move in legal_moves
+                                    }
+                                    policies.append(dummy_policy)
+
+                                    # Politique Stockfish
+                                    try:
+                                        best_move = self.hybrid_trainer.reference_evaluator.get_best_move(
+                                            board_pos
+                                        )
+                                        if best_move and best_move in legal_moves:
+                                            sf_policy = {}
+                                            for move in legal_moves:
+                                                if move == best_move:
+                                                    sf_policy[move] = 0.8
+                                                else:
+                                                    sf_policy[move] = 0.2 / (
+                                                        len(legal_moves) - 1
+                                                    )
+                                            stockfish_policies.append(sf_policy)
+                                        else:
+                                            stockfish_policies.append(dummy_policy)
+                                    except:
+                                        stockfish_policies.append(dummy_policy)
+                                else:
+                                    policies.append({})
+                                    stockfish_policies.append({})
+
+                            hybrid_game_data = HybridGameData(
+                                positions=positions,
+                                policies=policies,
+                                values=values,
+                                result=result,
+                                moves=moves,
+                                game_length=len(moves),
+                                stockfish_policies=stockfish_policies,
+                            )
+
+                            metrics = self.hybrid_trainer.train_single_game_hybrid(
+                                hybrid_game_data, verbose=False
+                            )
+                            print(
+                                f"  ✅ Partie {games_trained + 1} entrainée HYBRIDE (Loss: {metrics.get('total_loss', 0):.4f})"
+                            )
+
+                        elif current_trainer and hasattr(
+                            current_trainer, "train_single_game"
+                        ):
+                            # Entraînement classique en fallback
+                            values = current_trainer._calculate_stockfish_values(
+                                board_positions, result
+                            )
+
+                            policies = []
+                            for board_pos in board_positions:
+                                legal_moves = list(board_pos.legal_moves)
+                                if legal_moves:
+                                    uniform_prob = 1.0 / len(legal_moves)
+                                    dummy_policy = {
+                                        move: uniform_prob for move in legal_moves
+                                    }
+                                    policies.append(dummy_policy)
+                                else:
+                                    policies.append({})
+
+                            classic_game_data = GameData(
+                                positions=positions,
+                                policies=policies,
+                                values=values,
+                                result=result,
+                                moves=moves,
+                                game_length=len(moves),
+                            )
+
+                            metrics = current_trainer.train_single_game(
+                                classic_game_data, verbose=False
+                            )
+                            print(
+                                f"  ✅ Partie {games_trained + 1} entrainée CLASSIQUE (Loss: {metrics.get('total_loss', 0):.4f})"
+                            )
+
+                        total_loss += metrics.get("total_loss", 0)
+                        games_trained += 1
+
+                except Exception as e:
+                    print(f"  ⚠️ Erreur partie {game_data.get('result', '?')}: {e}")
+                    continue
+
+            if games_trained > 0:
+                avg_loss = total_loss / games_trained
+                print(
+                    f"✨ Micro-entraînement terminé! {games_trained} parties entrainées"
+                )
+                print(f"   Loss moyenne: {avg_loss:.4f}")
+                if self.hybrid_trainer:
+                    print(f"   🔄 Adaptation automatique appliquée")
+                print(f"   L'IA s'améliore en continu ! 🚀")
+            else:
+                print("⚠️ Aucune partie n'a pu être entrainée")
+
+            # Garder seulement les 10 dernières parties pour éviter l'accumulation
+            if len(self.collected_games) > 10:
+                self.collected_games = self.collected_games[-10:]
+
+        except Exception as e:
+            print(f"⚠️ Erreur pendant le micro-entraînement: {e}")
+            import traceback
+
+            traceback.print_exc()
+
+    def handle_ai_continuous_play(self):
+        """Gère l'IA continue contre le joueur."""
+        current_time = pygame.time.get_ticks()
+        board = self.environment.board
+
+        # Si les couleurs ne sont pas encore détectées, ne pas agir
+        if self.ai_color is None:
+            return
+
+        # Vérifier si c'est au tour de l'IA et qu'on attend son coup
+        if (
+            board.turn == self.ai_color  # Tour de l'IA
+            and not self.waiting_for_ai
+            and not board.is_game_over()
+            and not self.training_mode
+        ):  # Pas en mode entraînement
+
+            # Démarrer l'attente du coup IA
+            self.waiting_for_ai = True
+            self.ai_move_time = current_time + self.ai_delay
+            ai_color_name = "Blancs" if self.ai_color else "Noirs"
+            print(f"⏳ L'IA ({ai_color_name}) réfléchit... (délai: {self.ai_delay}ms)")
+
+        # Exécuter le coup IA si le délai est écoulé
+        elif (
+            self.waiting_for_ai
+            and current_time >= self.ai_move_time
+            and not board.is_game_over()
+        ):
+
+            self.execute_ai_move()
+            self.waiting_for_ai = False
+
+    def execute_ai_move(self):
+        """Exécute un coup de l'IA."""
+        board = self.environment.board
+
+        try:
+            # Sauvegarder l'état avant le coup pour la collecte
+            board_before = board.copy()
+
+            # Obtenir le coup de l'IA
+            move = self.get_ai_move(board, time_budget=2.0)
+
+            if move and move in board.legal_moves:
+                # Ajouter le coup à la collection
+                self.add_move_to_collection(move, board_before)
+
+                # Jouer le coup
+                board.push(move)
+
+                print(f"🤖 IA: {move}")
+
+                # Reset des sélections
+                self.selected_square = None
+                self.possible_moves = []
+
+                # Mettre à jour l'évaluation
+                self.update_evaluation()
+
+                # Vérifier si la partie est terminée
+                if board.is_game_over():
+                    result = board.result()
+                    print(f"🏁 Partie terminée: {result}")
+                    self.finish_game_collection(result)
+
+            else:
+                print("❌ L'IA n'a pas pu trouver de coup valide")
+
+        except Exception as e:
+            print(f"❌ Erreur lors du coup IA: {e}")
+            self.waiting_for_ai = False
 
     def update_evaluation(self):
         """Met à jour les évaluations de la position actuelle."""
@@ -1172,7 +1789,7 @@ class SimpleChessGUI3D:
         text_surface = self.font.render(turn_text, True, (255, 255, 255))
         self.screen.blit(text_surface, (10, 10))
 
-        # Mode d'entraînement
+        # Mode d'entraînement et IA continue
         if self.training_mode:
             if self.auto_training_active:
                 mode_text = "ENTRAÎNEMENT AUTOMATIQUE"
@@ -1213,6 +1830,46 @@ class SimpleChessGUI3D:
                     info_surface = pygame.font.Font(None, 24).render(info, True, color)
                     self.screen.blit(info_surface, (10, 70 + i * 25))
 
+        # Affichage des modes IA continue et apprentissage
+        if self.ai_auto_play or self.learning_from_games:
+            y_offset = 70 if not self.training_mode else 170
+
+            if self.ai_auto_play:
+                ai_text = "🤖 IA CONTINUE ACTIVÉE"
+                ai_color = (0, 255, 0)  # Vert
+                if self.waiting_for_ai:
+                    ai_text += " (⏳ réflexion...)"
+                    ai_color = (255, 255, 0)  # Jaune pendant la réflexion
+                ai_surface = self.font.render(ai_text, True, ai_color)
+                self.screen.blit(ai_surface, (10, y_offset))
+                y_offset += 30
+
+                # Délai configuré
+                delay_text = f"Délai IA: {self.ai_delay}ms (+/- pour ajuster)"
+                delay_surface = pygame.font.Font(None, 20).render(
+                    delay_text, True, (200, 200, 200)
+                )
+                self.screen.blit(delay_surface, (10, y_offset))
+                y_offset += 25
+
+            if self.learning_from_games:
+                learn_text = (
+                    f"🧠 APPRENTISSAGE ACTIF ({len(self.collected_games)} parties)"
+                )
+                learn_color = (100, 255, 100)  # Vert clair
+                learn_surface = self.font.render(learn_text, True, learn_color)
+                self.screen.blit(learn_surface, (10, y_offset))
+                y_offset += 30
+
+                if self.current_game_moves:
+                    moves_text = (
+                        f"Partie actuelle: {len(self.current_game_moves)} coups"
+                    )
+                    moves_surface = pygame.font.Font(None, 20).render(
+                        moves_text, True, (200, 200, 200)
+                    )
+                    self.screen.blit(moves_surface, (10, y_offset))
+
         # Contrôles
         controls = [
             "Contrôles:",
@@ -1222,6 +1879,8 @@ class SimpleChessGUI3D:
             "R: Réinitialiser caméra",
             "H: Toggle hints IA",
             "I: Jouer coup IA",
+            "C: IA continue ON/OFF",
+            "L: Apprentissage ON/OFF",
             "M: Changer mode IA",
             "E: Toggle barre d'évaluation",
         ]
@@ -1259,7 +1918,9 @@ class SimpleChessGUI3D:
 
         # Afficher les suggestions IA si actives
         if self.show_ai_hints and self.ai_analysis:
-            y_pos = start_y + len(controls) * 25 + 50  # +50 pour laisser place au mode IA
+            y_pos = (
+                start_y + len(controls) * 25 + 50
+            )  # +50 pour laisser place au mode IA
             title = self.font.render("Suggestions IA:", True, (255, 255, 255))
             self.screen.blit(title, (10, y_pos))
 
@@ -1329,6 +1990,9 @@ class SimpleChessGUI3D:
 
                 if target_move:
                     try:
+                        # Sauvegarder l'état avant le coup pour la collecte
+                        board_before = self.environment.board.copy()
+
                         # Détecter le type de mouvement avant de l'effectuer
                         is_castling = self.environment.board.is_castling(target_move)
                         is_en_passant = self.environment.board.is_en_passant(
@@ -1336,6 +2000,9 @@ class SimpleChessGUI3D:
                         )
 
                         if self.environment.make_move(target_move):
+                            # Ajouter le coup à la collection si l'apprentissage est activé
+                            self.add_move_to_collection(target_move, board_before)
+
                             move_desc = f"{chess.square_name(self.selected_square)} → {chess.square_name(square)}"
                             # Ajouter info sur le type de mouvement
                             if target_move.promotion:
@@ -1352,6 +2019,38 @@ class SimpleChessGUI3D:
                             # Mettre à jour l'évaluation après le coup
                             self.update_evaluation()
                             self.legal_moves_from_selected = []
+
+                            # Vérifier si la partie est terminée
+                            if self.environment.board.is_game_over():
+                                result = self.environment.board.result()
+                                print(f"🏁 Partie terminée: {result}")
+                                self.finish_game_collection(result)
+                            else:
+                                # Détecter automatiquement les couleurs des joueurs
+                                if self.player_color is None:
+                                    # Le joueur vient de jouer, donc c'est sa couleur
+                                    self.player_color = (
+                                        not self.environment.board.turn
+                                    )  # Couleur opposée au tour actuel
+                                    self.ai_color = (
+                                        self.environment.board.turn
+                                    )  # Tour actuel = IA
+                                    print(
+                                        f"🎯 Détection: Joueur = {'Blancs' if self.player_color else 'Noirs'}, IA = {'Blancs' if self.ai_color else 'Noirs'}"
+                                    )
+
+                                # Déclencher l'IA si mode continu activé et c'est son tour
+                                if (
+                                    self.ai_auto_play
+                                    and self.environment.board.turn == self.ai_color
+                                    and not self.training_mode
+                                    and not self.waiting_for_ai
+                                ):
+                                    self.waiting_for_ai = True
+                                    self.ai_move_time = (
+                                        pygame.time.get_ticks() + self.ai_delay
+                                    )
+                                    print(f"⏳ L'IA va jouer dans {self.ai_delay}ms...")
                         else:
                             print("❌ Mouvement invalide")
                     except Exception as e:
@@ -1431,11 +2130,15 @@ class SimpleChessGUI3D:
                         self.show_ai_hints = not self.show_ai_hints
                         if self.show_ai_hints and not self.ai_analysis:
                             # Analyser la position
-                            self.ai_analysis = self.get_ai_analysis(self.environment.board)
+                            self.ai_analysis = self.get_ai_analysis(
+                                self.environment.board
+                            )
                     elif event.key == pygame.K_i:
                         # Jouer le meilleur coup IA
                         if not self.environment.board.is_game_over():
-                            move = self.get_ai_move(self.environment.board, time_budget=3.0)
+                            move = self.get_ai_move(
+                                self.environment.board, time_budget=3.0
+                            )
                             if move and move in self.environment.board.legal_moves:
                                 self.environment.board.push(move)
                                 self.selected_square = None
@@ -1494,7 +2197,7 @@ class SimpleChessGUI3D:
                                 )
                                 print(f"⏯️  Auto-jeu {status}")
                     elif event.key == pygame.K_PLUS or event.key == pygame.K_EQUALS:
-                        # Accélérer l'entraînement
+                        # Accélérer l'entraînement OU réduire le délai IA
                         if self.auto_training_active:
                             self.auto_training_speed = max(
                                 100, self.auto_training_speed - 100
@@ -1502,8 +2205,11 @@ class SimpleChessGUI3D:
                             print(
                                 f"⚡ Vitesse d'entraînement: {self.auto_training_speed}ms"
                             )
+                        elif self.ai_auto_play:
+                            self.ai_delay = max(500, self.ai_delay - 200)
+                            print(f"⚡ Délai IA réduit: {self.ai_delay}ms")
                     elif event.key == pygame.K_MINUS:
-                        # Ralentir l'entraînement
+                        # Ralentir l'entraînement OU augmenter le délai IA
                         if self.auto_training_active:
                             self.auto_training_speed = min(
                                 2000, self.auto_training_speed + 100
@@ -1511,12 +2217,40 @@ class SimpleChessGUI3D:
                             print(
                                 f"🐌 Vitesse d'entraînement: {self.auto_training_speed}ms"
                             )
+                        elif self.ai_auto_play:
+                            self.ai_delay = min(5000, self.ai_delay + 200)
+                            print(f"🐌 Délai IA augmenté: {self.ai_delay}ms")
                     elif event.key == pygame.K_ESCAPE:
                         # Arrêter l'entraînement automatique
                         if self.auto_training_active:
                             print("🛑 Arrêt de l'entraînement automatique demandé")
+                            print("💾 Sauvegarde d'urgence du modèle...")
+
+                            # 🚀 SAUVEGARDE D'URGENCE !
+                            current_trainer = (
+                                self.hybrid_trainer
+                                if self.use_hybrid_trainer
+                                else self.trainer
+                            )
+                            if current_trainer and hasattr(
+                                current_trainer, "save_model"
+                            ):
+                                try:
+                                    current_trainer.save_model(
+                                        f"hybrid_model_emergency_iter_{self.auto_training_iteration}.pt"
+                                    )
+                                    print("✅ Modèle sauvegardé avec succès!")
+                                except Exception as e:
+                                    print(f"⚠️ Erreur de sauvegarde: {e}")
+
                             self.auto_training_active = False
                             self.training_mode = False
+                    elif event.key == pygame.K_c:
+                        # Toggle IA continue
+                        self.toggle_ai_continuous()
+                    elif event.key == pygame.K_l:
+                        # Toggle apprentissage pendant le jeu
+                        self.toggle_learning_mode()
 
             # Gestion de l'auto-jeu d'entraînement
             if self.training_mode and not self.auto_training_active:
@@ -1525,6 +2259,10 @@ class SimpleChessGUI3D:
             # Gestion de l'entraînement automatique
             if self.auto_training_active and not self.auto_training_paused:
                 self.handle_automatic_training()
+
+            # Gestion de l'IA continue contre le joueur
+            if self.ai_auto_play and not self.training_mode:
+                self.handle_ai_continuous_play()
 
             # Dessiner
             self.screen.fill(self.COLORS["background"])

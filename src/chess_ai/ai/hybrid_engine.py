@@ -85,6 +85,7 @@ class HybridAI:
         """
         self.device = torch.device(device)
         self.default_mode = default_mode
+        self.current_mode = default_mode  # Mode actuel de l'IA
 
         # Initialiser Stockfish
         self.stockfish = None
@@ -119,7 +120,7 @@ class HybridAI:
 
         # Initialiser MCTS
         self.mcts = MCTS(
-            network=self.neural_net if self.neural_available else None,
+            neural_net=self.neural_net if self.neural_available else None,
             c_puct=1.4,
             device=self.device,
         )
